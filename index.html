@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light only">
 <meta name="description" content="온화그림미술공간 화실 쉐어 예약. 날짜와 시간을 골라 바로 예약하세요.">
 <!-- 카카오톡·문자 링크 미리보기 (주소는 GitHub Pages 주소 기준) -->
 <meta property="og:type" content="website">
@@ -16,10 +17,6 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#2A44C4">
 <title>화실 쉐어 예약</title>
-<script>
-/* 저장된 화면 모드를 첫 화면이 그려지기 전에 적용 */
-try{var __t=localStorage.getItem('hwasil.theme');if(__t==='light'||__t==='dark')document.documentElement.setAttribute('data-theme',__t);}catch(e){}
-</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
 <style>
 /* 한 장의 카드를 세 칸으로 나눈 구성: 안내 | 달력 | 시간 목록. 좁은 화면에서는 위에서 아래로 쌓이고, 예약 폼은 아래에서 올라오는 시트로 열려요. */
@@ -32,21 +29,8 @@ try{var __t=localStorage.getItem('hwasil.theme');if(__t==='light'||__t==='dark')
   --f-mono:'DM Mono',ui-monospace,Menlo,monospace;
   color-scheme:light;
 }
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --bg:#0E1116; --card:#171B22; --ink:#E8EBF1; --muted:#9AA3B2; --faint:#505968; --line:#2A303A;
-    --accent:#8DA1FF; --on-accent:#0D1122; --tint:#232B49; --sun:#F08C99; --warn:#3A3321;
-    --shadow:0 0 0 1px rgba(255,255,255,.04),0 14px 44px rgba(0,0,0,.45);
-    color-scheme:dark;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#0E1116; --card:#171B22; --ink:#E8EBF1; --muted:#9AA3B2; --faint:#505968; --line:#2A303A;
-  --accent:#8DA1FF; --on-accent:#0D1122; --tint:#232B49; --sun:#F08C99; --warn:#3A3321;
-  --shadow:0 0 0 1px rgba(255,255,255,.04),0 14px 44px rgba(0,0,0,.45);
-  color-scheme:dark;
-}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html{background:var(--bg)}
 body{background:var(--bg);color:var(--ink);font:400 15px/1.55 var(--f-body);margin:0}
 button,input,textarea{font:inherit;color:inherit}
@@ -54,10 +38,6 @@ button{-webkit-tap-highlight-color:transparent}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .wrap{max-width:1040px;margin:0 auto;padding-block:20px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 
-.topbar{display:flex;justify-content:flex-end;margin-bottom:12px}
-.theme{display:inline-flex;padding:3px;border-radius:99px;background:var(--card);border:1px solid var(--line)}
-.theme button{border:0;background:transparent;padding:6px 12px;border-radius:99px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;min-height:32px}
-.theme button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
 
 .notice{background:var(--warn);border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:14px}
 
@@ -203,6 +183,7 @@ textarea.inp{min-height:72px;resize:vertical}
 .step output{min-width:4.5em;text-align:center;font:500 16px var(--f-mono);color:var(--ink)}
 .step .btn{width:46px;padding:0;font-size:18px}
 .hint{font-size:12.5px;color:var(--muted)}
+.fixed{font:500 17px var(--f-mono);color:var(--ink);padding:10px 14px;background:var(--bg);border-radius:10px}
 .err{color:var(--sun);font-size:13.5px;min-height:1.2em}
 .done p{margin:0 0 14px}
 .done .sum{font-weight:700;color:var(--ink)}
@@ -214,13 +195,6 @@ textarea.inp{min-height:72px;resize:vertical}
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar">
-    <div class="theme" role="group" aria-label="화면 모드">
-      <button type="button" data-mode="auto" aria-pressed="true">자동</button>
-      <button type="button" data-mode="light" aria-pressed="false">라이트</button>
-      <button type="button" data-mode="dark" aria-pressed="false">다크</button>
-    </div>
-  </div>
   <div class="notice" id="notice" hidden></div>
   <main class="card">
     <section class="info" id="info" aria-label="안내"></section>
@@ -267,8 +241,8 @@ const CONFIG = {
   OPEN: 10,           // 대여 시작 가능 시각 (시)
   CLOSE: 22,          // 종료 시각 (시)
   STEP: 30,           // 시간 선택 단위 (분)
-  MIN_MIN: 120,       // 최소 이용 시간 (분). 처음에도 이 시간이 선택돼요
-  MAX_MIN: 240,       // 한 번에 빌릴 수 있는 최대 시간 (분)
+  MIN_MIN: 120,       // 이용 시간 (분). 2시간 고정
+  MAX_MIN: 120,       // MIN_MIN 과 같게 두면 이용 시간이 고정돼요
   CLOSED_DAYS: []     // 쉬는 요일 (0=일, 1=월 ... 6=토). 예: [1]
 };
 /* ============================== */
@@ -311,22 +285,6 @@ const ICON={
   door:'<svg viewBox="0 0 24 24"><path d="M5 21V4h10v17M3 21h18"/><circle cx="12" cy="12.500" r=".8"/></svg>'
 };
 function li(icon,text){ const l=h('li'); const s=h('span'); s.innerHTML=icon; l.append(s.firstChild,h('span',{text})); return l; }
-
-/* ---------- 화면 모드 (자동 / 라이트 / 다크) ---------- */
-(function(){
-  const root=document.documentElement;
-  let mode='auto'; try{ const t=localStorage.getItem('hwasil.theme'); if(t==='light'||t==='dark') mode=t; }catch(e){}
-  function paint(){
-    document.querySelectorAll('.theme button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));
-  }
-  document.querySelectorAll('.theme button').forEach(b=>b.addEventListener('click',()=>{
-    mode=b.dataset.mode;
-    if(mode==='auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme',mode);
-    try{ if(mode==='auto') localStorage.removeItem('hwasil.theme'); else localStorage.setItem('hwasil.theme',mode); }catch(e){}
-    paint();
-  }));
-  paint();
-})();
 
 /* ---------- 저장소: API(구글 시트) 또는 체험 모드(localStorage) ---------- */
 const LS='hwasil.rental.v1';
@@ -415,7 +373,7 @@ function renderInfo(){
   const el=$('#info'); el.replaceChildren();
   el.append(h('div',{class:'brand',text:C.NAME}),h('h1',{text:'화실 쉐어 예약'}));
   const meta=h('ul',{class:'meta'});
-  meta.append(li(ICON.clock,durText(C.MIN_MIN)+'부터 '+durText(C.STEP)+' 단위 · 최대 '+durText(C.MAX_MIN)),li(ICON.users,'정원 '+C.CAPACITY+'명 (1인 1예약)'),li(ICON.door,hh(C.OPEN*60)+'–'+hh(C.CLOSE*60)+' 이용 가능'));
+  meta.append(li(ICON.clock,C.MIN_MIN===C.MAX_MIN?'1회 '+durText(C.MIN_MIN)+' 이용 · '+durText(C.STEP)+' 단위로 시작':durText(C.MIN_MIN)+'부터 '+durText(C.STEP)+' 단위 · 최대 '+durText(C.MAX_MIN)),li(ICON.users,'정원 '+C.CAPACITY+'명 (1인 1예약)'),li(ICON.door,hh(C.OPEN*60)+'–'+hh(C.CLOSE*60)+' 이용 가능'));
   if(C.ADDRESS) meta.append(li(ICON.pin,C.ADDRESS));
   el.append(meta);
   if(C.MESSAGE) el.append(h('p',{class:'msg',text:C.MESSAGE}));
@@ -546,14 +504,18 @@ function renderForm(){
     S.dur=Math.max(C.MIN_MIN,Math.min(S.dur,Math.max(mx,C.MIN_MIN)));
     title.textContent=label(s)+' '+span(S.start,S.dur);
     dv.textContent=durText(S.dur);
-    fb.textContent=(mx>=C.MIN_MIN?durText(C.MIN_MIN)+'부터 최대 '+durText(mx)+'까지 이용할 수 있어요.':'이 시작 시간은 예약할 수 없어요.')
+    const fixed=C.MIN_MIN===C.MAX_MIN;
+    fb.textContent=(mx>=C.MIN_MIN?(fixed?'이용 시간은 '+durText(C.MIN_MIN)+'으로 정해져 있어요.':durText(C.MIN_MIN)+'부터 최대 '+durText(mx)+'까지 이용할 수 있어요.'):'이 시작 시간은 예약할 수 없어요.')
       +(!S.fresh&&!LOCAL?' 현황을 확인하는 중이라, 자리가 없으면 예약할 때 알려 드려요.':'');
     submit.disabled=mx<C.MIN_MIN||S.busy;
     minus.disabled=S.dur<=C.MIN_MIN; plus.disabled=S.dur>=mx;
+    stepBox.hidden=fixed; fixedBox.textContent=span(S.start,S.dur)+' ('+durText(S.dur)+')'; fixedBox.hidden=!fixed;
     renderHours();
   }
   const minus=h('button',{class:'btn',type:'button','aria-label':'이용 시간 줄이기',onclick:()=>{S.dur=Math.max(C.MIN_MIN,S.dur-C.STEP);upd();}},'−');
   const plus=h('button',{class:'btn',type:'button','aria-label':'이용 시간 늘리기',onclick:()=>{S.dur=Math.min(Math.max(maxDur(s,S.start),C.MIN_MIN),S.dur+C.STEP);upd();}},'+');
+  const stepBox=h('div',{class:'step'},minus,dv,plus);
+  const fixedBox=h('div',{class:'fixed'});
   const form=h('form',{class:'book',novalidate:true,onsubmit:async e=>{
     e.preventDefault(); if(S.busy) return;
     const nm=name.value.trim(), ph=phone.value.trim();
@@ -588,12 +550,7 @@ function renderForm(){
     refreshLater();
   }},
     h('div',{class:'sh'},title,h('button',{class:'x',type:'button','aria-label':'닫기',onclick:closeSheet},'×')),
-    h('div',{class:'f'},'이용 시간',
-      h('div',{class:'step'},
-        minus,
-        dv,
-        plus),
-      fb),
+    h('div',{class:'f'},'이용 시간',stepBox,fixedBox,fb),
     h('label',{class:'f','for':'f-name'},'이름',name),
     h('label',{class:'f','for':'f-phone'},'연락처',phone),
     h('label',{class:'f','for':'f-car'},'차량번호',car),
@@ -604,18 +561,23 @@ function renderForm(){
 }
 function renderSide(){
   const box=$('#side'); box.replaceChildren();
-  if(S.admin){ box.append(renderUpcoming()); return; }
+  if(S.admin) box.append(renderUpcoming(), h('div',{style:'height:16px'}));
   const panel=h('div',{class:'panel'});
   panel.append(h('h2',{class:'section-title',text:'내 예약 확인'}));
   const ph=h('input',{class:'inp',id:'m-phone',type:'tel',inputmode:'tel',placeholder:'예약할 때 적은 연락처','aria-label':'연락처'});
+  const go=h('button',{class:'btn',type:'submit'},S.mineBusy?'조회 중…':'조회');
+  go.disabled=!!S.mineBusy;
   panel.append(h('form',{class:'lookup',onsubmit:async e=>{
-    e.preventDefault();
-    if(digits(ph.value).length<9){S.mineErr='연락처를 입력해 주세요.';S.mine=null;renderSide();return;}
-    try{ const r=await A.mine(ph.value.trim()); S.mine=r.ok?{phone:ph.value.trim(),items:r.items}:null; S.mineErr=r.ok?'':(r.error||'조회하지 못했어요.'); }
-    catch(ex){ S.mine=null; S.mineErr='서버에 연결하지 못했어요.'; }
-    renderSide();
-  }},ph,h('button',{class:'btn',type:'submit'},'조회')));
-  if(S.mine&&S.mine.phone) ph.value=S.mine.phone;
+    e.preventDefault(); if(S.mineBusy) return;
+    const v=ph.value.trim(); S.mineInput=v;
+    if(digits(v).length<9){S.mineErr='예약할 때 적은 연락처를 숫자 9자리 이상으로 입력해 주세요.';S.mine=null;renderSide();return;}
+    S.mineBusy=true; S.mineErr=''; renderSide();
+    try{ const r=await once(()=>A.mine(v)); S.mine=r.ok?{phone:v,items:r.items||[]}:null; S.mineErr=r.ok?'':(r.error||'조회하지 못했어요.'); }
+    catch(ex){ S.mine=null; S.mineErr=ex&&ex.kind==='timeout'?'응답이 늦어요. 잠시 뒤 다시 조회해 주세요.':'서버에 연결하지 못했어요. 잠시 뒤 다시 조회해 주세요.'; }
+    S.mineBusy=false; renderSide();
+  }},ph,go));
+  ph.value=S.mineInput||(S.mine&&S.mine.phone)||'';
+  ph.addEventListener('input',()=>{S.mineInput=ph.value;});
   if(S.mineErr) panel.append(h('div',{class:'err',text:S.mineErr}));
   if(S.mine){
     if(!S.mine.items.length) panel.append(h('div',{class:'empty',text:'다가오는 예약이 없어요.'}));
