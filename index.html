@@ -205,6 +205,9 @@ textarea.inp{min-height:72px;resize:vertical}
 .hint{font-size:12.5px;color:var(--muted)}
 .err{color:var(--sun);font-size:13.5px;min-height:1.2em}
 .done p{margin:0 0 14px}
+.done .sum{font-weight:700;color:var(--ink)}
+.done .live{margin:0 0 14px}
+.done.fail .ok{color:var(--sun)}
 .done .ok{font:700 19px var(--f-display);margin-bottom:6px}
 .row2{display:flex;gap:8px;flex-wrap:wrap}
 </style>
@@ -336,18 +339,19 @@ function occOf(list){
 }
 /* 구글 서버가 응답하지 않으면 기다리지 않고 끊어요 (예약은 메일 발송까지 있어서 더 길게) */
 async function post(payload){
+  const isBook=payload.action==='book';
   const ctrl=new AbortController();
-  const ms=payload.action==='book'?30000:20000;
-  const timer=setTimeout(()=>ctrl.abort(),ms);
+  const timer=isBook?null:setTimeout(()=>ctrl.abort(),20000);
   try{
-    const r=await fetch(C.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),signal:ctrl.signal});
+    const r=await fetch(C.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),
+      signal:isBook?undefined:ctrl.signal, keepalive:isBook});
     const text=await r.text();
     try{ return JSON.parse(text); }
     catch(e){ const err=new Error('bad_response'); err.kind='bad'; throw err; }
   }catch(e){
     if(e.name==='AbortError'){ const err=new Error('timeout'); err.kind='timeout'; throw err; }
     throw e;
-  }finally{ clearTimeout(timer); }
+  }finally{ if(timer) clearTimeout(timer); }
 }
 const A={
   async pub(){
@@ -515,10 +519,15 @@ function renderForm(){
   const scrim=$('#scrim'), sheet=$('#sheet'); sheet.replaceChildren();
   if(S.done){
     scrim.hidden=false; document.body.style.overflow='hidden';
-    sheet.append(h('div',{class:'done',role:'status'},
-      h('div',{class:'ok',text:'예약이 접수됐어요'}),
-      h('p',{text:S.done}),
-      h('button',{class:'btn primary',type:'button',onclick:()=>{S.done=null;renderForm();}},'확인')));
+    const d=S.done;
+    const T={pending:'예약 요청을 보냈어요',ok:'예약이 확정됐어요',fail:'예약되지 않았어요',slow:'확정이 늦어지고 있어요'};
+    const box=h('div',{class:'done '+d.state,role:'status'},h('div',{class:'ok',text:T[d.state]}),h('p',{class:'sum',text:d.summary}));
+    if(d.state==='pending') box.append(h('div',{class:'live'},h('span',{class:'spin','aria-hidden':'true'}),'확정하는 중이에요. 이 화면을 닫아도 예약은 계속 처리돼요.'));
+    if(d.state==='ok') box.append(h('p',{text:'변경이나 취소는 화면 아래 "내 예약 확인"에서 할 수 있어요.'}));
+    if(d.state==='fail') box.append(h('p',{class:'err',text:d.msg}));
+    if(d.state==='slow') box.append(h('p',{text:'예약은 처리되고 있을 수 있어요. 잠시 뒤 화면 아래 "내 예약 확인"에서 연락처로 확인해 주세요.'}));
+    box.append(h('button',{class:'btn primary',type:'button',onclick:()=>{S.done=null;renderForm();}},d.state==='fail'?'다른 시간 고르기':'확인'));
+    sheet.append(box);
     sheet.focus();
     return;
   }
@@ -553,21 +562,30 @@ function renderForm(){
     const cr=car.value.trim();
     if(!cr){err.textContent='차량번호를 입력해 주세요. 차량이 없으면 "없음"이라고 적어 주세요.';car.focus();return;}
     if(S.dur>maxDur(s,S.start)){err.textContent='선택한 시간에 자리가 부족해요.';return;}
-    S.busy=true; submit.disabled=true; submit.textContent='예약 저장 중…'; err.textContent='';
+    err.textContent='';
     const item={date:s,start:S.start,dur:S.dur,name:nm,phone:ph,car:cr};
-    try{
-      const r=await A.book(item);
-      if(!r.ok){ err.textContent=r.error||'예약하지 못했어요.'; S.busy=false; refreshLater(); submit.textContent='예약하기'; renderAll(); upd(); return; }
-      S.done=label(s)+' '+span(item.start,item.dur)+'. 변경이나 취소는 화면 아래 "내 예약 확인"에서 할 수 있어요.';
-      S.start=null; S.busy=false;
-      bump(item,1); if(S.admin) S.items=S.items.concat([Object.assign({id:'tmp'},item)]);
-      renderAll(); renderForm(); refreshLater();
-    }catch(ex){
-      S.busy=false; submit.disabled=false; submit.textContent='예약하기';
-      err.textContent=ex&&ex.kind==='timeout'
-        ?'응답이 늦어지고 있어요. 예약이 이미 됐을 수 있으니 화면 아래 "내 예약 확인"에서 먼저 확인해 주세요.'
-        :(ex&&ex.kind==='bad'?'예약 서버 설정에 문제가 있어요. 화실에 문의해 주세요.':'서버에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+    /* 서버 응답을 기다리지 않고 바로 완료 화면을 띄우고, 확정 여부는 뒤에서 받아 와요 */
+    const ticket=Date.now();
+    const summary=label(s)+' '+span(item.start,item.dur)+' · '+nm;
+    S.done={state:'pending',summary,ticket};
+    S.start=null; S.busy=false;
+    bump(item,1); if(S.admin) S.items=S.items.concat([Object.assign({id:'tmp'+ticket},item)]);
+    renderAll(); renderForm();
+    const mine=()=>S.done&&S.done.ticket===ticket;
+    let settled=false;
+    setTimeout(()=>{ if(!settled&&mine()){ S.done.state='slow'; renderForm(); } },30000);
+    let r;
+    try{ r=await A.book(item); }
+    catch(ex){ r={ok:false,error:ex&&ex.kind==='bad'?'예약 서버 설정에 문제가 있어요. 화실에 문의해 주세요.':'인터넷 연결이 끊겨 예약을 보내지 못했어요. 다시 시도해 주세요.'}; }
+    settled=true;
+    if(r.ok){
+      if(mine()){ S.done.state='ok'; renderForm(); } else alertSoft('예약이 확정됐어요. '+summary);
+    }else{
+      bump(item,-1); if(S.admin) S.items=S.items.filter(x=>x.id!=='tmp'+ticket);
+      S.done={state:'fail',summary,ticket,msg:r.error||'예약하지 못했어요.'};
+      renderAll(); renderForm();
     }
+    refreshLater();
   }},
     h('div',{class:'sh'},title,h('button',{class:'x',type:'button','aria-label':'닫기',onclick:closeSheet},'×')),
     h('div',{class:'f'},'이용 시간',
