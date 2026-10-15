@@ -288,6 +288,14 @@ function li(icon,text){ const l=h('li'); const s=h('span'); s.innerHTML=icon; l.
 
 /* ---------- 저장소: API(구글 시트) 또는 체험 모드(localStorage) ---------- */
 const LS='hwasil.rental.v1';
+/* 시트에서 맨 앞 0 이 빠진 번호도 같은 번호로 보도록 맞춰요 */
+const phoneKey=v=>{ const d=digits(v); return d&&d[0]!=='0'?'0'+d:d; };
+/* 이 폰에서 한 예약을 기억해 두었다가 '내 예약 확인' 때 바로 보여 줘요 (서버 확인은 뒤에서) */
+const MK='onhwa.mine.v1';
+function mineLoad(){ try{ return JSON.parse(localStorage.getItem(MK)||'[]').filter(b=>b.date>=todayStr); }catch(e){ return []; } }
+function mineSave(list){ try{ localStorage.setItem(MK,JSON.stringify(list.slice(-30))); }catch(e){} }
+function mineAdd(b){ mineSave(mineLoad().filter(x=>x.id!==b.id).concat([b])); }
+function mineRemove(id){ mineSave(mineLoad().filter(x=>x.id!==id)); }
 const lsLoad=()=>{try{return JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){return [];}};
 const lsSave=a=>{try{localStorage.setItem(LS,JSON.stringify(a));}catch(e){}};
 function occOf(list){
@@ -322,8 +330,9 @@ const A={
       if(list.some(b=>b.date===item.date&&digits(b.phone)===digits(item.phone)&&b.start<item.start+item.dur&&item.start<b.start+b.dur))
         return {ok:false,error:'같은 연락처로 겹치는 시간에 이미 예약이 있어요. "내 예약 확인"에서 확인해 주세요.'};
       for(let m=item.start;m<item.start+item.dur;m+=C.STEP){ if(((occ[item.date]||{})[m]||0)+1>C.CAPACITY) return {ok:false,error:'방금 다른 예약이 들어와서 자리가 부족해요.'}; }
-      list.push(Object.assign({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),createdAt:new Date().toISOString()},item));
-      lsSave(list); return {ok:true};
+      const id=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+      list.push(Object.assign({id,createdAt:new Date().toISOString()},item));
+      lsSave(list); return {ok:true,id};
     }
     return post({action:'book',item});
   },
@@ -541,6 +550,7 @@ function renderForm(){
     catch(ex){ r={ok:false,error:ex&&ex.kind==='bad'?'예약 서버 설정에 문제가 있어요. 화실에 문의해 주세요.':'인터넷 연결이 끊겨 예약을 보내지 못했어요. 다시 시도해 주세요.'}; }
     settled=true;
     if(r.ok){
+      if(r.id) mineAdd({id:r.id,date:item.date,start:item.start,dur:item.dur,phone:phoneKey(item.phone),car:item.car});
       if(mine()){ S.done.state='ok'; renderForm(); } else alertSoft('예약이 확정됐어요. '+summary);
     }else{
       bump(item,-1); if(S.admin) S.items=S.items.filter(x=>x.id!=='tmp'+ticket);
@@ -571,16 +581,31 @@ function renderSide(){
     e.preventDefault(); if(S.mineBusy) return;
     const v=ph.value.trim(); S.mineInput=v;
     if(digits(v).length<9){S.mineErr='예약할 때 적은 연락처를 숫자 9자리 이상으로 입력해 주세요.';S.mine=null;renderSide();return;}
-    S.mineBusy=true; S.mineErr=''; renderSide();
-    try{ const r=await once(()=>A.mine(v)); S.mine=r.ok?{phone:v,items:r.items||[]}:null; S.mineErr=r.ok?'':(r.error||'조회하지 못했어요.'); }
-    catch(ex){ S.mine=null; S.mineErr=ex&&ex.kind==='timeout'?'응답이 늦어요. 잠시 뒤 다시 조회해 주세요.':'서버에 연결하지 못했어요. 잠시 뒤 다시 조회해 주세요.'; }
+    const key=phoneKey(v);
+    const local=mineLoad().filter(b=>b.phone===key);
+    S.mineBusy=true; S.mineErr='';
+    S.mine={phone:v,items:local,checking:true};      // 이 폰에서 한 예약은 바로 표시
+    renderSide();
+    try{
+      const r=await once(()=>A.mine(v));
+      if(r.ok){
+        const items=r.items||[];
+        S.mine={phone:v,items};
+        mineSave(mineLoad().filter(b=>b.phone!==key).concat(items.map(b=>({id:b.id,date:b.date,start:b.start,dur:b.dur,phone:key,car:b.car}))));
+      }else{ S.mine=local.length?{phone:v,items:local,stale:true}:null; S.mineErr=r.error||'조회하지 못했어요.'; }
+    }catch(ex){
+      S.mine=local.length?{phone:v,items:local,stale:true}:null;
+      S.mineErr=local.length?'':(ex&&ex.kind==='timeout'?'응답이 늦어요. 잠시 뒤 다시 조회해 주세요.':'서버에 연결하지 못했어요. 잠시 뒤 다시 조회해 주세요.');
+    }
     S.mineBusy=false; renderSide();
   }},ph,go));
   ph.value=S.mineInput||(S.mine&&S.mine.phone)||'';
   ph.addEventListener('input',()=>{S.mineInput=ph.value;});
   if(S.mineErr) panel.append(h('div',{class:'err',text:S.mineErr}));
   if(S.mine){
-    if(!S.mine.items.length) panel.append(h('div',{class:'empty',text:'다가오는 예약이 없어요.'}));
+    if(S.mine.checking) panel.append(h('div',{class:'live',style:'margin:10px 0 0'},h('span',{class:'spin','aria-hidden':'true'}),S.mine.items.length?'이 폰에서 한 예약이에요. 최신 내용을 확인하는 중…':'예약을 찾는 중이에요…'));
+    if(S.mine.stale) panel.append(h('div',{class:'live warn',style:'margin:10px 0 0'},'최신 내용을 확인하지 못해 이 폰에 저장된 예약을 보여 드려요. 잠시 뒤 다시 조회해 주세요.'));
+    if(!S.mine.items.length&&!S.mine.checking) panel.append(h('div',{class:'empty',text:'다가오는 예약이 없어요.'}));
     const list=h('div',{class:'mine-list'});
     S.mine.items.sort((a,b)=>a.date===b.date?a.start-b.start:(a.date<b.date?-1:1)).forEach(b=>{
       const confirming=S.confirm===b.id;
@@ -590,7 +615,7 @@ function renderSide(){
         b.car?h('span',{class:'ph',text:'차량 '+b.car}):null,
         h('button',{class:'btn small danger sp',onclick:async()=>{
           if(S.confirm!==b.id){S.confirm=b.id;renderSide();setTimeout(()=>{if(S.confirm===b.id){S.confirm=null;renderSide();}},4000);return;}
-          try{ const r=await A.cancelMine(b.id,S.mine.phone); if(r.ok){ S.mine.items=S.mine.items.filter(x=>x.id!==b.id); S.confirm=null; bump(b,-1); renderAll(); refreshLater(); } else S.mineErr=r.error||'취소하지 못했어요.'; }
+          try{ const r=await A.cancelMine(b.id,S.mine.phone); if(r.ok){ S.mine.items=S.mine.items.filter(x=>x.id!==b.id); mineRemove(b.id); S.confirm=null; bump(b,-1); renderAll(); refreshLater(); } else S.mineErr=r.error||'취소하지 못했어요.'; }
           catch(ex){ S.mineErr='서버에 연결하지 못했어요.'; }
           renderSide();
         }},confirming?'한 번 더 누르면 취소':'예약 취소')));
