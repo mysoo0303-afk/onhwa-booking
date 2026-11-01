@@ -60,6 +60,7 @@ button{-webkit-tap-highlight-color:transparent}
 .info h1{font:500 15px var(--f-body);margin:0;color:var(--muted)}
 .meta{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:14px}
 .meta li{display:flex;gap:10px;align-items:flex-start}
+.meta li span{white-space:pre-line}
 .meta svg{flex:none;width:18px;height:18px;margin-top:2px;stroke:var(--muted);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .msg{white-space:pre-line;color:var(--muted);font-size:14px;margin:0}
 .privacy{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;margin:0}
@@ -113,6 +114,17 @@ button{-webkit-tap-highlight-color:transparent}
 .tr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;min-height:44px;padding:0 14px;background:transparent;border:0;border-top:1px solid var(--line);cursor:pointer;text-align:left}
 .tr:first-child{border-top:0}
 .tr .t{font:500 15px var(--f-mono)}
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;background:var(--bg);border-radius:12px;margin:0 0 12px}
+.plans button{border:0;background:transparent;border-radius:9px;min-height:52px;padding:6px 8px;cursor:pointer;display:grid;gap:1px;color:var(--muted);font-size:14px;font-weight:500}
+.plans button b{font-size:12.5px;font-weight:500}
+.plans button[aria-checked="true"]{background:var(--card);color:var(--accent);font-weight:700;box-shadow:0 1px 3px rgba(16,24,40,.12)}
+.plans button[aria-checked="true"] b{color:var(--ink)}
+.pl{font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--tint);color:var(--accent);white-space:nowrap}
+.pl.monthly{background:var(--accent);color:var(--on-accent)}
+.pnote{background:var(--tint);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.6;color:var(--ink)}
+.pnote strong{display:block;font-size:12.5px;color:var(--accent);margin-bottom:2px}
+.pnote ul{margin:0;padding-left:16px}
+#planNote{margin:-4px 0 12px}
 .tr .m{display:flex;align-items:center;justify-content:flex-end;gap:8px;color:var(--muted);font-size:12.5px;white-space:nowrap}
 .tr .bar{width:44px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
 .tr .bar::after{content:'';display:block;height:100%;width:calc(var(--f)*100%);background:var(--accent)}
@@ -219,6 +231,8 @@ textarea.inp{min-height:72px;resize:vertical}
     <section class="timecol" id="timecol" aria-label="시간 선택">
       <h2>시간 선택</h2>
       <p class="dl" id="dateLabel"></p>
+      <div class="plans" id="plans" role="radiogroup" aria-label="이용권 선택"></div>
+      <div id="planNote"></div>
       <div id="hours"></div>
       <div id="adminList"></div>
     </section>
@@ -241,9 +255,12 @@ const CONFIG = {
   OPEN: 10,           // 대여 시작 가능 시각 (시)
   CLOSE: 22,          // 종료 시각 (시)
   STEP: 30,           // 시간 선택 단위 (분)
-  MIN_MIN: 120,       // 이용 시간 (분). 2시간 고정
-  MAX_MIN: 120,       // MIN_MIN 과 같게 두면 이용 시간이 고정돼요
-  CLOSED_DAYS: []     // 쉬는 요일 (0=일, 1=월 ... 6=토). 예: [1]
+  PLANS: [           // 이용권 종류와 1회 이용 시간 (분). API를 연결하면 Code.gs 값이 우선
+    {id:'count',   label:'횟수제',   min:120,
+     note:['4회권은 첫 예약일부터 6주 안에 모두 사용해 주세요.','8회권은 첫 예약일부터 12주 안에 모두 사용해 주세요.']},
+    {id:'monthly', label:'월정액제', min:180}
+  ],
+  CLOSED_DAYS: [1,5,6] // 쉬는 요일 (0=일, 1=월 ... 6=토). 지금: 월·금·토 휴무 → 일·화·수·목만 예약
 };
 /* ============================== */
 
@@ -355,9 +372,14 @@ const A={
 };
 
 /* ---------- 상태 ---------- */
-const S={loaded:false,fresh:false,lastLoad:0,view:new Date(today.getFullYear(),today.getMonth(),1),sel:todayStr,occ:{},start:null,dur:120,
+const S={plan:'count',loaded:false,fresh:false,lastLoad:0,view:new Date(today.getFullYear(),today.getMonth(),1),sel:todayStr,occ:{},start:null,dur:120,
   admin:false,key:'',items:[],mine:null,mineErr:'',done:null,busy:false,confirm:null,netErr:false,loginOpen:false,loginErr:'',
   };
+/* 이용권: 고른 이용권의 시간으로 1회 이용 시간이 정해져요 */
+const planOf=id=>C.PLANS.find(p=>p.id===id)||C.PLANS[0];
+function setPlan(id){ S.plan=planOf(id).id; C.MIN_MIN=C.MAX_MIN=planOf(S.plan).min; }
+function noteBox(p){ return h('div',{class:'pnote'},h('strong',{text:p.label+' 이용 기간 안내'}),h('ul',null,p.note.map(t=>h('li',{text:t})))); }
+const planTag=b=>{ const p=planOf(b.plan); return h('span',{class:'pl '+p.id,text:p.label}); };
 const cnt=(d,m)=>((S.occ[d]||{})[m])||0;
 const rem=(d,m)=>Math.max(0,C.CAPACITY-cnt(d,m));
 const isClosed=d=>C.CLOSED_DAYS.indexOf(parse(d).getDay())>=0;
@@ -382,10 +404,11 @@ function renderInfo(){
   const el=$('#info'); el.replaceChildren();
   el.append(h('div',{class:'brand',text:C.NAME}),h('h1',{text:'화실 쉐어 예약'}));
   const meta=h('ul',{class:'meta'});
-  meta.append(li(ICON.clock,C.MIN_MIN===C.MAX_MIN?'1회 '+durText(C.MIN_MIN)+' 이용 · '+durText(C.STEP)+' 단위로 시작':durText(C.MIN_MIN)+'부터 '+durText(C.STEP)+' 단위 · 최대 '+durText(C.MAX_MIN)),li(ICON.users,'정원 '+C.CAPACITY+'명 (1인 1예약)'),li(ICON.door,hh(C.OPEN*60)+'–'+hh(C.CLOSE*60)+' 이용 가능'));
+  meta.append(li(ICON.clock,C.PLANS.map(p=>p.label+' 1회 '+durText(p.min)).concat([durText(C.STEP)+' 단위로 시작']).join('\n')),li(ICON.users,'정원 '+C.CAPACITY+'명 (1인 1예약)'),li(ICON.door,hh(C.OPEN*60)+'–'+hh(C.CLOSE*60)+' 이용 가능'));
   if(C.ADDRESS) meta.append(li(ICON.pin,C.ADDRESS));
   el.append(meta);
   if(C.MESSAGE) el.append(h('p',{class:'msg',text:C.MESSAGE}));
+  C.PLANS.filter(p=>p.note&&p.note.length).forEach(p=>el.append(noteBox(p)));
   el.append(h('p',{class:'privacy',text:S.admin?'운영자 화면에서는 예약자 이름과 연락처가 보여요.':'시간마다 몇 명이 예약돼 있는지만 보여요. 예약자 이름은 공개되지 않아요. 함께 오시는 분도 각자 예약해 주세요.'}));
   const box=h('div',{class:'admin-box'});
   if(S.admin){
@@ -442,6 +465,12 @@ function renderHours(){
   $('#dateLabel').textContent=(x.getMonth()+1)+'월 '+x.getDate()+'일 '+DOW[x.getDay()]+'요일 · 시작 시간을 골라 주세요';
   const box=$('#hours'); box.replaceChildren();
   const adm=$('#adminList'); adm.replaceChildren();
+  const pl=$('#plans'); pl.replaceChildren();
+  C.PLANS.forEach(p=>pl.append(h('button',{type:'button',role:'radio','aria-checked':String(S.plan===p.id),
+    onclick:()=>{ if(S.plan===p.id) return; setPlan(p.id); S.start=null; S.done=null; renderCal(); renderHours(); renderForm(); }},
+    p.label,h('b',{text:'1회 '+durText(p.min)}))));
+  const pn=$('#planNote'); pn.replaceChildren();
+  const cur=planOf(S.plan); if(cur.note&&cur.note.length) pn.append(noteBox(cur));
   if(isClosed(s)){ box.append(h('div',{class:'empty',text:'이 요일은 쉬는 날이에요.'})); return; }
   if(!S.fresh&&!LOCAL){
     if(S.netErr) box.append(h('div',{class:'live warn',role:'status'},'현황을 아직 확인하지 못했어요. 예약은 할 수 있고, 자리가 없으면 예약할 때 알려 드려요.',
@@ -473,6 +502,7 @@ function renderHours(){
       const confirming=S.confirm===b.id;
       wrap.append(h('div',{class:'person'},
         h('span',{class:'ph',text:span(b.start,b.dur)}),
+        planTag(b),
         h('span',{class:'nm',text:b.name}),
         h('span',{class:'ph',text:b.phone}),
         b.car?h('span',{class:'ph',text:'차량 '+b.car}):null,
@@ -514,17 +544,18 @@ function renderForm(){
     title.textContent=label(s)+' '+span(S.start,S.dur);
     dv.textContent=durText(S.dur);
     const fixed=C.MIN_MIN===C.MAX_MIN;
-    fb.textContent=(mx>=C.MIN_MIN?(fixed?'이용 시간은 '+durText(C.MIN_MIN)+'으로 정해져 있어요.':durText(C.MIN_MIN)+'부터 최대 '+durText(mx)+'까지 이용할 수 있어요.'):'이 시작 시간은 예약할 수 없어요.')
+    fb.textContent=(mx>=C.MIN_MIN?(fixed?planOf(S.plan).label+'는 1회 '+durText(C.MIN_MIN)+' 이용이에요. 이용권을 바꾸려면 창을 닫고 위에서 골라 주세요.':durText(C.MIN_MIN)+'부터 최대 '+durText(mx)+'까지 이용할 수 있어요.'):'이 시작 시간은 예약할 수 없어요.')
       +(!S.fresh&&!LOCAL?' 현황을 확인하는 중이라, 자리가 없으면 예약할 때 알려 드려요.':'');
     submit.disabled=mx<C.MIN_MIN||S.busy;
     minus.disabled=S.dur<=C.MIN_MIN; plus.disabled=S.dur>=mx;
-    stepBox.hidden=fixed; fixedBox.textContent=span(S.start,S.dur)+' ('+durText(S.dur)+')'; fixedBox.hidden=!fixed;
+    stepBox.hidden=fixed; fixedBox.textContent=planOf(S.plan).label+' · '+span(S.start,S.dur)+' ('+durText(S.dur)+')'; fixedBox.hidden=!fixed;
     renderHours();
   }
   const minus=h('button',{class:'btn',type:'button','aria-label':'이용 시간 줄이기',onclick:()=>{S.dur=Math.max(C.MIN_MIN,S.dur-C.STEP);upd();}},'−');
   const plus=h('button',{class:'btn',type:'button','aria-label':'이용 시간 늘리기',onclick:()=>{S.dur=Math.min(Math.max(maxDur(s,S.start),C.MIN_MIN),S.dur+C.STEP);upd();}},'+');
   const stepBox=h('div',{class:'step'},minus,dv,plus);
   const fixedBox=h('div',{class:'fixed'});
+  const sheetNote=planOf(S.plan).note&&planOf(S.plan).note.length?noteBox(planOf(S.plan)):null;
   const form=h('form',{class:'book',novalidate:true,onsubmit:async e=>{
     e.preventDefault(); if(S.busy) return;
     const nm=name.value.trim(), ph=phone.value.trim();
@@ -534,10 +565,10 @@ function renderForm(){
     if(!cr){err.textContent='차량번호를 입력해 주세요. 차량이 없으면 "없음"이라고 적어 주세요.';car.focus();return;}
     if(S.dur>maxDur(s,S.start)){err.textContent='선택한 시간에 자리가 부족해요.';return;}
     err.textContent='';
-    const item={date:s,start:S.start,dur:S.dur,name:nm,phone:ph,car:cr};
+    const item={date:s,start:S.start,dur:S.dur,plan:S.plan,name:nm,phone:ph,car:cr};
     /* 서버 응답을 기다리지 않고 바로 완료 화면을 띄우고, 확정 여부는 뒤에서 받아 와요 */
     const ticket=Date.now();
-    const summary=label(s)+' '+span(item.start,item.dur)+' · '+nm;
+    const summary=label(s)+' '+span(item.start,item.dur)+' · '+planOf(item.plan).label+' · '+nm;
     S.done={state:'pending',summary,ticket};
     S.start=null; S.busy=false;
     bump(item,1); if(S.admin) S.items=S.items.concat([Object.assign({id:'tmp'+ticket},item)]);
@@ -550,7 +581,7 @@ function renderForm(){
     catch(ex){ r={ok:false,error:ex&&ex.kind==='bad'?'예약 서버 설정에 문제가 있어요. 화실에 문의해 주세요.':'인터넷 연결이 끊겨 예약을 보내지 못했어요. 다시 시도해 주세요.'}; }
     settled=true;
     if(r.ok){
-      if(r.id) mineAdd({id:r.id,date:item.date,start:item.start,dur:item.dur,phone:phoneKey(item.phone),car:item.car});
+      if(r.id) mineAdd({id:r.id,date:item.date,start:item.start,dur:item.dur,plan:item.plan,phone:phoneKey(item.phone),car:item.car});
       if(mine()){ S.done.state='ok'; renderForm(); } else alertSoft('예약이 확정됐어요. '+summary);
     }else{
       bump(item,-1); if(S.admin) S.items=S.items.filter(x=>x.id!=='tmp'+ticket);
@@ -561,6 +592,7 @@ function renderForm(){
   }},
     h('div',{class:'sh'},title,h('button',{class:'x',type:'button','aria-label':'닫기',onclick:closeSheet},'×')),
     h('div',{class:'f'},'이용 시간',stepBox,fixedBox,fb),
+    sheetNote,
     h('label',{class:'f','for':'f-name'},'이름',name),
     h('label',{class:'f','for':'f-phone'},'연락처',phone),
     h('label',{class:'f','for':'f-car'},'차량번호',car),
@@ -591,7 +623,7 @@ function renderSide(){
       if(r.ok){
         const items=r.items||[];
         S.mine={phone:v,items};
-        mineSave(mineLoad().filter(b=>b.phone!==key).concat(items.map(b=>({id:b.id,date:b.date,start:b.start,dur:b.dur,phone:key,car:b.car}))));
+        mineSave(mineLoad().filter(b=>b.phone!==key).concat(items.map(b=>({id:b.id,date:b.date,start:b.start,dur:b.dur,plan:b.plan,phone:key,car:b.car}))));
       }else{ S.mine=local.length?{phone:v,items:local,stale:true}:null; S.mineErr=r.error||'조회하지 못했어요.'; }
     }catch(ex){
       S.mine=local.length?{phone:v,items:local,stale:true}:null;
@@ -612,6 +644,7 @@ function renderSide(){
       list.append(h('div',{class:'person'},
         h('span',{class:'nm',text:label(b.date)}),
         h('span',{class:'ph',text:span(b.start,b.dur)}),
+        planTag(b),
         b.car?h('span',{class:'ph',text:'차량 '+b.car}):null,
         h('button',{class:'btn small danger sp',onclick:async()=>{
           if(S.confirm!==b.id){S.confirm=b.id;renderSide();setTimeout(()=>{if(S.confirm===b.id){S.confirm=null;renderSide();}},4000);return;}
@@ -641,6 +674,7 @@ function renderUpcoming(){
     const wrap=h('div',{class:'people'});
     list.forEach(b=>wrap.append(h('div',{class:'person'},
       h('span',{class:'ph',text:span(b.start,b.dur)}),
+      planTag(b),
       h('span',{class:'nm',text:b.name}),
       h('span',{class:'ph',text:b.phone}),
       b.car?h('span',{class:'ph',text:'차량 '+b.car}):null)));
@@ -654,8 +688,8 @@ function renderAll(){ renderInfo(); renderNotice(); renderCal(); renderHours(); 
 /* 현황 불러오기: 동시에 여러 번 부르면 하나로 합치고, 실패하면 한 번 더 시도해요.
    이미 한 번 불러온 뒤의 일시적인 실패는 경고를 띄우지 않고 이전 현황을 그대로 보여 줘요. */
 let inflight=null;
-const CFG_KEYS=['CAPACITY','OPEN','CLOSE','STEP','MIN_MIN','MAX_MIN','CLOSED_DAYS','NAME','ADDRESS','MESSAGE'];
-function applyConfig(cfg){ if(cfg) CFG_KEYS.forEach(k=>{ if(cfg[k]!=null) C[k]=cfg[k]; }); }
+const CFG_KEYS=['CAPACITY','OPEN','CLOSE','STEP','PLANS','CLOSED_DAYS','NAME','ADDRESS','MESSAGE'];
+function applyConfig(cfg){ if(cfg) CFG_KEYS.forEach(k=>{ if(cfg[k]!=null) C[k]=cfg[k]; }); setPlan(S.plan); }
 /* 마지막으로 받은 현황을 폰에 저장해 두고, 다음에 열 때 바로 보여 줘요 (그다음 새로 확인) */
 const CK='onhwa.cache.v1';
 function cacheSave(r){ try{ localStorage.setItem(CK,JSON.stringify({url:C.API_URL,at:Date.now(),occ:r.occ||{},config:r.config||null})); }catch(e){} }
@@ -725,6 +759,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden) autoRefr
 window.addEventListener('focus',()=>autoRefresh(false));
 setInterval(()=>autoRefresh(true),120000);
 
+setPlan(S.plan);
 if(!LOCAL) cacheLoad();
 renderAll();
 window.__hwasil={S,A};
