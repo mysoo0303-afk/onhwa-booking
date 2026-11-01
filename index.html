@@ -62,8 +62,14 @@ button{-webkit-tap-highlight-color:transparent}
 .meta li{display:flex;gap:10px;align-items:flex-start}
 .meta li span{white-space:pre-line}
 .meta svg{flex:none;width:18px;height:18px;margin-top:2px;stroke:var(--muted);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.msg{white-space:pre-line;color:var(--muted);font-size:14px;margin:0}
-.privacy{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;margin:0}
+.notices{border-top:1px solid var(--line);padding-top:14px;text-align:left}
+.notices h2{font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--muted);margin:0 0 10px}
+.notices ol{list-style:none;margin:0;padding:0;display:grid;gap:12px;counter-reset:n}
+.notices li{counter-increment:n;display:grid;grid-template-columns:20px minmax(0,1fr);column-gap:8px;font-size:13.5px;line-height:1.55}
+.notices li::before{content:counter(n);width:20px;height:20px;border-radius:50%;background:var(--tint);color:var(--accent);font:700 11.5px/20px var(--f-body);text-align:center;margin-top:1px;grid-row:1 / span 9}
+.notices li b{display:block;font-size:13.5px;color:var(--ink)}
+.notices li span{display:block;color:var(--muted)}
+.admin-note{font-size:12.5px;color:var(--muted);margin:0}
 .admin-box{margin-top:auto;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 @media (max-width:980px){.admin-box{margin-top:0}}
 
@@ -247,10 +253,14 @@ textarea.inp{min-height:72px;resize:vertical}
 <script>
 /* ===== 여기만 고치면 돼요 ===== */
 const CONFIG = {
-  API_URL: "https://script.google.com/macros/s/AKfycbz-F9wglLzsVcoA95LD1kHQwIXqylsnAdaaSS2N9A9iY8QxqS-e9Ig9GzvGdDZajrz5/exec",        // 구글 Apps Script 웹앱 주소. 비워 두면 '체험 모드'(이 브라우저에만 저장)
+  API_URL: "",        // 구글 Apps Script 웹앱 주소. 비워 두면 '체험 모드'(이 브라우저에만 저장)
   NAME: "온화그림미술공간", // 가게 이름
   ADDRESS: "",        // 위치 안내 (예: 대구 중구 ○○로 12, 2층). 비워 두면 표시 안 함
-  MESSAGE: "안녕하세요.\n이용할 날짜와 시간을 골라 예약 정보를 남겨 주세요.\n감사합니다.",
+  NOTICES: [         // 왼쪽 '안내사항'. 횟수제 이용 기간은 PLANS 의 note 에서 자동으로 들어가요
+    {title:'예약 방법', lines:['이용할 날짜와 시간을 골라 예약 정보를 남겨 주세요.','이용 시간에는 정리 시간도 포함돼요 :D']},
+    {title:'1인 1예약', lines:['시간마다 몇 명이 예약했는지만 보이고, 예약자 이름은 공개되지 않아요.','함께 오시는 분도 각자 예약해 주세요.']},
+    {title:'예약 취소', lines:['화면 아래 "내 예약 확인"에서 예약할 때 적은 연락처로 조회하면 직접 취소할 수 있어요.']}
+  ],
   CAPACITY: 5,        // 같은 시간에 이용할 수 있는 최대 인원(명). 1인 1예약이라 예약 5건까지 받아요. API를 연결하면 Code.gs 값이 우선
   OPEN: 10,           // 대여 시작 가능 시각 (시)
   CLOSE: 22,          // 종료 시각 (시)
@@ -407,9 +417,15 @@ function renderInfo(){
   meta.append(li(ICON.clock,C.PLANS.map(p=>p.label+' 1회 '+durText(p.min)).concat([durText(C.STEP)+' 단위로 시작']).join('\n')),li(ICON.users,'정원 '+C.CAPACITY+'명 (1인 1예약)'),li(ICON.door,hh(C.OPEN*60)+'–'+hh(C.CLOSE*60)+' 이용 가능'));
   if(C.ADDRESS) meta.append(li(ICON.pin,C.ADDRESS));
   el.append(meta);
-  if(C.MESSAGE) el.append(h('p',{class:'msg',text:C.MESSAGE}));
-  C.PLANS.filter(p=>p.note&&p.note.length).forEach(p=>el.append(noteBox(p)));
-  el.append(h('p',{class:'privacy',text:S.admin?'운영자 화면에서는 예약자 이름과 연락처가 보여요.':'시간마다 몇 명이 예약돼 있는지만 보여요. 예약자 이름은 공개되지 않아요. 함께 오시는 분도 각자 예약해 주세요.'}));
+  /* 안내사항: 예약 방법 → 이용권별 이용 기간 → 나머지 순서 */
+  const base=(C.NOTICES||[]).slice();
+  const planItems=C.PLANS.filter(p=>p.note&&p.note.length).map(p=>({title:p.label+' 이용 기간',lines:p.note}));
+  const items=base.slice(0,1).concat(planItems,base.slice(1));
+  if(items.length){
+    el.append(h('section',{class:'notices','aria-label':'안내사항'},h('h2',{text:'안내사항'}),
+      h('ol',null,items.map(n=>h('li',null,h('b',{text:n.title}),(n.lines||[]).map(t=>h('span',{text:t})))))));
+  }
+  if(S.admin) el.append(h('p',{class:'admin-note',text:'운영자 화면에서는 예약자 이름과 연락처가 보여요.'}));
   const box=h('div',{class:'admin-box'});
   if(S.admin){
     box.append(h('span',{class:'badge',text:'운영자 화면'}),h('button',{class:'btn small',onclick:logout},'나가기'));
@@ -533,7 +549,7 @@ function renderForm(){
   const s=S.sel;
   const name=h('input',{class:'inp',id:'f-name',autocomplete:'off',maxlength:'30'});
   const phone=h('input',{class:'inp',id:'f-phone',type:'tel',inputmode:'tel',autocomplete:'off',maxlength:'20',placeholder:'010-0000-0000'});
-  const car=h('input',{class:'inp',id:'f-car',autocomplete:'off',maxlength:'20',placeholder:'예: 12가 3456'});
+  const car=h('input',{class:'inp',id:'f-car',autocomplete:'off',maxlength:'20',placeholder:'예: 12가 3456 (차량이 없으면 비워 두세요)'});
   const dv=h('output');
   const fb=h('div',{class:'hint'}), err=h('div',{class:'err',role:'alert'});
   const submit=h('button',{class:'btn primary',type:'submit'},'예약하기');
@@ -561,8 +577,7 @@ function renderForm(){
     const nm=name.value.trim(), ph=phone.value.trim();
     if(!nm){err.textContent='이름을 입력해 주세요.';name.focus();return;}
     if(digits(ph).length<9){err.textContent='연락처를 숫자 9자리 이상으로 입력해 주세요.';phone.focus();return;}
-    const cr=car.value.trim();
-    if(!cr){err.textContent='차량번호를 입력해 주세요. 차량이 없으면 "없음"이라고 적어 주세요.';car.focus();return;}
+    const cr=car.value.trim()||'없음';   // 비워 두면 '없음'으로 저장
     if(S.dur>maxDur(s,S.start)){err.textContent='선택한 시간에 자리가 부족해요.';return;}
     err.textContent='';
     const item={date:s,start:S.start,dur:S.dur,plan:S.plan,name:nm,phone:ph,car:cr};
@@ -595,7 +610,7 @@ function renderForm(){
     sheetNote,
     h('label',{class:'f','for':'f-name'},'이름',name),
     h('label',{class:'f','for':'f-phone'},'연락처',phone),
-    h('label',{class:'f','for':'f-car'},'차량번호',car),
+    h('label',{class:'f','for':'f-car'},'차량번호 (선택)',car),
     err,
     submit);
   sheet.append(form);
@@ -688,7 +703,7 @@ function renderAll(){ renderInfo(); renderNotice(); renderCal(); renderHours(); 
 /* 현황 불러오기: 동시에 여러 번 부르면 하나로 합치고, 실패하면 한 번 더 시도해요.
    이미 한 번 불러온 뒤의 일시적인 실패는 경고를 띄우지 않고 이전 현황을 그대로 보여 줘요. */
 let inflight=null;
-const CFG_KEYS=['CAPACITY','OPEN','CLOSE','STEP','PLANS','CLOSED_DAYS','NAME','ADDRESS','MESSAGE'];
+const CFG_KEYS=['CAPACITY','OPEN','CLOSE','STEP','PLANS','CLOSED_DAYS','NAME','ADDRESS','NOTICES'];
 function applyConfig(cfg){ if(cfg) CFG_KEYS.forEach(k=>{ if(cfg[k]!=null) C[k]=cfg[k]; }); setPlan(S.plan); }
 /* 마지막으로 받은 현황을 폰에 저장해 두고, 다음에 열 때 바로 보여 줘요 (그다음 새로 확인) */
 const CK='onhwa.cache.v1';
